@@ -19,7 +19,7 @@ body {
     margin: auto;
 }
 
-/* Login form specific width */
+/* login form specific width */
 #login-form .card-inner {
     max-width: 360px;
     margin: 0 auto;

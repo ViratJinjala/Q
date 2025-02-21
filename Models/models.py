@@ -78,3 +78,97 @@ def get_user_by_username(email):
     user = cursor.fetchone()  # Fetch one user
     conn.close()
     return user
+
+# all this for admin dashboard
+def get_subjects_with_chapters():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Modified query to correctly count questions
+    query = """
+    SELECT 
+        s.id as subject_id,
+        s.name as subject_name,
+        c.id as chapter_id,
+        c.name as chapter_name,
+        (
+            SELECT COUNT(*)
+            FROM questions q2
+            JOIN quizzes qz ON q2.quiz_id = qz.id
+            WHERE qz.chapter_id = c.id
+        ) as question_count
+    FROM subjects s
+    LEFT JOIN chapters c ON s.id = c.subject_id
+    ORDER BY s.id, c.id
+    """
+    
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    
+    # Organize the data into a nested structure
+    subjects = {}
+    for row in rows:
+        if row['subject_id'] not in subjects:
+            subjects[row['subject_id']] = {
+                'id': row['subject_id'],
+                'name': row['subject_name'],
+                'chapters': []
+            }
+        
+        if row['chapter_id']:  # Only add chapter if it exists
+            subjects[row['subject_id']]['chapters'].append({
+                'id': row['chapter_id'],
+                'name': row['chapter_name'],
+                'questions': row['question_count'] or 0
+            })
+    
+    conn.close()
+    return list(subjects.values())
+
+def add_chapter_in_db(subject_id, name, description):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO chapters (subject_id, name, description)
+        VALUES (?, ?, ?)
+    """, (subject_id, name, description))
+    conn.commit()
+    conn.close()
+
+def delete_chapter_in_db(chapter_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM chapters WHERE id = ?", (chapter_id,))
+    conn.commit()
+    conn.close()
+
+def edit_chapter_in_db(chapter_id, name, description):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE chapters 
+        SET name = ?, description = ?
+        WHERE id = ?
+    """, (name, description, chapter_id))
+    conn.commit()
+    conn.close()
+
+def get_chapter_by_id(chapter_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM chapters WHERE id = ?
+    """, (chapter_id,))
+    chapter = cursor.fetchone()
+    conn.close()
+    return chapter
+
+def add_subject_in_db(name, description):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO subjects (name, description)
+        VALUES (?, ?)
+    """, (name, description))
+    conn.commit()
+    conn.close()
