@@ -1,4 +1,5 @@
 from Models.database import get_db_connection
+from datetime import datetime
 
 def create_tables():
     conn = get_db_connection()
@@ -55,6 +56,8 @@ def create_tables():
             quiz_id INTEGER NOT NULL,
             time_stamp TEXT,
             total_score INTEGER,
+            correct_answers INTEGER,
+            total_questions INTEGER,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
             FOREIGN KEY (quiz_id) REFERENCES quizzes (id) ON DELETE CASCADE
         );
@@ -307,3 +310,205 @@ def delete_question_in_db(question_id):
     cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
     conn.commit()
     conn.close()
+
+def get_available_quizzes():
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    try:
+        # Updated query to get all necessary quiz information
+        cursor.execute("""
+            SELECT 
+                q.id,
+                q.remarks as name,
+                q.date_of_quiz,
+                q.time_duration,
+                s.name as subject_name,
+                c.name as chapter_name,
+                (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
+            FROM quizzes q
+            LEFT JOIN chapters c ON q.chapter_id = c.id
+            LEFT JOIN subjects s ON c.subject_id = s.id
+            ORDER BY q.date_of_quiz DESC
+        """)
+        
+        quizzes = cursor.fetchall()
+        
+        # Format the data for display
+        for quiz in quizzes:
+            # Format date if it exists
+            if quiz['date_of_quiz']:
+                try:
+                    quiz['date_of_quiz'] = datetime.strptime(
+                        quiz['date_of_quiz'], '%Y-%m-%d'
+                    ).strftime('%d %b %Y')
+                except:
+                    quiz['date_of_quiz'] = 'Not set'
+            
+            # Add duration unit if exists
+            if quiz['time_duration']:
+                quiz['time_duration'] = f"{quiz['time_duration']} mins"
+            else:
+                quiz['time_duration'] = 'Not set'
+            
+            # Set default name if not provided
+            if not quiz['name']:
+                quiz['name'] = f"{quiz['subject_name']} Quiz"
+                
+            # Set default for question count
+            if quiz['question_count'] is None:
+                quiz['question_count'] = 0
+                
+        print("Retrieved quizzes:", quizzes)  # Debug print
+        return quizzes
+        
+    except Exception as e:
+        print(f"Error retrieving quizzes: {e}")
+        return []
+        
+    finally:
+        conn.close()
+
+def get_user_by_id(user_id):
+    if user_id == 'admin':
+        return None
+        
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        return user
+    except Exception as e:
+        print(f"Error getting user by ID: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_user_by_email(email):
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+        user = cursor.fetchone()
+        return user
+    except Exception as e:
+        print(f"Error getting user by email: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_quiz_by_id(quiz_id):
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT 
+                q.id,
+                q.remarks as name,
+                q.date_of_quiz,
+                q.time_duration,
+                s.name as subject_name,
+                c.name as chapter_name,
+                (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
+            FROM quizzes q
+            LEFT JOIN chapters c ON q.chapter_id = c.id
+            LEFT JOIN subjects s ON c.subject_id = s.id
+            WHERE q.id = ?
+        """, (quiz_id,))
+        
+        quiz = cursor.fetchone()
+        
+        if quiz:
+            # Format date if it exists
+            if quiz['date_of_quiz']:
+                try:
+                    quiz['date_of_quiz'] = datetime.strptime(
+                        quiz['date_of_quiz'], '%Y-%m-%d'
+                    ).strftime('%d %b %Y')
+                except:
+                    quiz['date_of_quiz'] = 'Not set'
+            
+            # Add duration unit if exists
+            if quiz['time_duration']:
+                quiz['time_duration'] = int(quiz['time_duration'])
+            else:
+                quiz['time_duration'] = 0
+                
+            # Set default name if not provided
+            if not quiz['name']:
+                quiz['name'] = f"{quiz['subject_name']} Quiz"
+        
+        return quiz
+        
+    except Exception as e:
+        print(f"Error retrieving quiz: {e}")
+        return None
+        
+    finally:
+        conn.close()
+
+def get_quiz_questions(quiz_id):
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT 
+                id,
+                question_statement,
+                option1,
+                option2,
+                option3,
+                option4,
+                correct_option
+            FROM questions 
+            WHERE quiz_id = ?
+            ORDER BY id
+        """, (quiz_id,))
+        
+        questions = cursor.fetchall()
+        return questions
+        
+    except Exception as e:
+        print(f"Error retrieving questions: {e}")
+        return []
+        
+    finally:
+        conn.close()
+
+def save_quiz_score(quiz_id, user_id, score, correct_answers, total_questions):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO scores (
+                user_id, 
+                quiz_id, 
+                time_stamp, 
+                total_score,
+                correct_answers,
+                total_questions
+            ) VALUES (?, ?, datetime('now'), ?, ?, ?)
+            RETURNING id
+        """, (user_id, quiz_id, score, correct_answers, total_questions))
+        
+        score_id = cursor.fetchone()[0]
+        conn.commit()
+        return score_id
+        
+    except Exception as e:
+        print(f"Error saving score: {e}")
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
