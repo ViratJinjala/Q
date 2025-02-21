@@ -172,3 +172,138 @@ def add_subject_in_db(name, description):
     """, (name, description))
     conn.commit()
     conn.close()
+
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
+def get_quizzes():
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    # Get quizzes with basic info
+    cursor.execute("""
+        SELECT q.id, q.chapter_id, q.remarks,
+               q.date_of_quiz, q.time_duration,
+               c.name as chapter_name, s.name as subject_name
+        FROM quizzes q
+        JOIN chapters c ON q.chapter_id = c.id
+        JOIN subjects s ON c.subject_id = s.id
+        ORDER BY q.date_of_quiz DESC
+    """)
+    quizzes = cursor.fetchall()
+    
+    # Get questions for each quiz
+    for quiz in quizzes:
+        cursor.execute("""
+            SELECT id, question_statement as title,
+                   option1, option2, option3, option4, correct_option
+            FROM questions
+            WHERE quiz_id = ?
+            ORDER BY id
+        """, (quiz['id'],))
+        quiz['questions'] = cursor.fetchall()
+    
+    conn.close()
+    return quizzes
+
+def search_quizzes(query):
+    conn = get_db_connection()
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    search_term = f"%{query}%"
+    cursor.execute("""
+        SELECT q.id, q.chapter_id, q.remarks,
+               q.date_of_quiz, q.time_duration,
+               c.name as chapter_name, s.name as subject_name
+        FROM quizzes q
+        JOIN chapters c ON q.chapter_id = c.id
+        JOIN subjects s ON c.subject_id = s.id
+        WHERE s.name LIKE ? 
+           OR c.name LIKE ?
+           OR q.remarks LIKE ?
+        ORDER BY q.date_of_quiz DESC
+    """, (search_term, search_term, search_term))
+    quizzes = cursor.fetchall()
+    
+    # Get questions for each quiz
+    for quiz in quizzes:
+        cursor.execute("""
+            SELECT id, question_statement as title
+            FROM questions
+            WHERE quiz_id = ?
+        """, (quiz['id'],))
+        quiz['questions'] = cursor.fetchall()
+    
+    conn.close()
+    return quizzes
+
+# all this for quiz management
+def add_question_in_db(quiz_id, question_statement, option1, option2, option3, option4, correct_option):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO questions (
+                quiz_id, question_statement, 
+                option1, option2, option3, option4, 
+                correct_option
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (quiz_id, question_statement, option1, option2, option3, option4, correct_option))
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+    
+
+def add_quiz_in_db(chapter_id, quiz_date, quiz_duration, passing_score, max_attempts, instructions, status):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO quizzes (
+            chapter_id, date_of_quiz, duration_minutes, 
+            passing_score, max_attempts, instructions, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (chapter_id, quiz_date, quiz_duration, passing_score, max_attempts, instructions, status))
+    conn.commit()
+    conn.close()
+
+def get_all_subjects():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, name 
+        FROM subjects 
+        ORDER BY name
+    """)
+    subjects = cursor.fetchall()
+    conn.close()
+    return subjects
+
+def get_chapters_by_subject(subject_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.name, s.name as subject_name
+        FROM chapters c
+        JOIN subjects s ON c.subject_id = s.id
+        WHERE c.subject_id = ?
+        ORDER BY c.name
+    """, (subject_id,))
+    chapters = cursor.fetchall()
+    conn.close()
+    return chapters
+
+def delete_question_in_db(question_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+    conn.commit()
+    conn.close()
